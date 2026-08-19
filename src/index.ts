@@ -1,4 +1,6 @@
 import type { Probot } from "probot";
+
+import { generateAiReview } from "./ai-reviewer.js";
 import {
   analyzeFiles,
   type ChangedFile,
@@ -51,10 +53,29 @@ export default function reviewPilot(app: Probot): void {
 
       const result = analyzeFiles(changedFiles);
 
+      let aiReview: string | null = null;
+
+      try {
+        aiReview = await generateAiReview({
+          title: pullRequest.title,
+          description: pullRequest.body ?? "",
+          files: changedFiles,
+        });
+      } catch (error) {
+        context.log.warn(
+          { error },
+          "Gemini review failed; continuing with rule-based analysis.",
+        );
+      }
+
       const findings =
         result.findings.length > 0
           ? result.findings.map(formatFinding).join("\n\n")
           : "✅ No risky patterns were detected by the current rules.";
+
+      const aiReviewSection =
+        aiReview ??
+        "AI analysis was unavailable; rule-based analysis completed successfully.";
 
       const body = [
         "## 🤖 ReviewPilot Automated Review",
@@ -67,9 +88,13 @@ export default function reviewPilot(app: Probot): void {
         `- Additions: ${result.additions}`,
         `- Deletions: ${result.deletions}`,
         "",
-        "### Findings",
+        "### Deterministic findings",
         "",
         findings,
+        "",
+        "### AI review",
+        "",
+        aiReviewSection,
         "",
         "---",
         "_ReviewPilot performs automated analysis. Human review is still recommended._",
@@ -84,6 +109,7 @@ export default function reviewPilot(app: Probot): void {
           repository: context.payload.repository.full_name,
           pullRequest: pullRequest.number,
           riskScore: result.riskScore,
+          aiReviewGenerated: aiReview !== null,
         },
         "Pull request analyzed",
       );
