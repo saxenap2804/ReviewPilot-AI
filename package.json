@@ -22,6 +22,7 @@
   },
   "homepage": "https://github.com/saxenap2804/ReviewPilot-AI#readme",
   "dependencies": {
+    "@google/genai": "^2.17.1",
     "dotenv": "^17.4.2",
     "probot": "^14.3.2"
   },
