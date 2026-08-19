@@ -1,0 +1,33 @@
+{
+  "name": "reviewpilot-ai",
+  "version": "1.0.0",
+  "description": "An AI-powered GitHub App that reviews pull requests, detects risks, suggests code improvements, and recommends tests.",
+  "main": "lib/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
+    "start": "probot run ./lib/index.js",
+    "dev": "npm run build && npm start"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/saxenap2804/ReviewPilot-AI.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/saxenap2804/ReviewPilot-AI/issues"
+  },
+  "homepage": "https://github.com/saxenap2804/ReviewPilot-AI#readme",
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "probot": "^14.3.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2"
+  }
+}
