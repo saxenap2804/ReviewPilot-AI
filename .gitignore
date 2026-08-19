@@ -141,3 +141,15 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+# Dependencies
+node_modules/
+
+# Compiled TypeScript
+lib/
+
+# Environment variables and credentials
+.env
+*.pem
+
+# Logs
+*.log
