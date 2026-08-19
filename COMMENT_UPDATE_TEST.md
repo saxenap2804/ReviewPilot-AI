@@ -1,3 +1,5 @@
 # Comment Update Test
 
-Version 1
+Version 2
+
+This additional change should update the existing ReviewPilot comment.
