@@ -110,16 +110,19 @@ export default function reviewPilot(app: Probot): void {
         "_ReviewPilot performs automated analysis. Human review is still recommended._",
       ].join("\n");
 
-      const existingComments =
-        await context.octokit.paginate(
-          context.octokit.rest.issues.listComments,
-          {
-            owner,
-            repo,
-            issue_number: pullRequest.number,
-            per_page: 100,
-          },
-        );
+      /*
+       * Create the first ReviewPilot comment or update the existing
+       * comment when additional commits are pushed to the PR.
+       */
+      const existingComments = await context.octokit.paginate(
+        context.octokit.rest.issues.listComments,
+        {
+          owner,
+          repo,
+          issue_number: pullRequest.number,
+          per_page: 100,
+        },
+      );
 
       const existingReview = existingComments.find(
         (comment) =>
@@ -154,12 +157,88 @@ export default function reviewPilot(app: Probot): void {
         );
       }
 
+      /*
+       * Publish a GitHub check based on the deterministic risk score.
+       *
+       * 0–29   = success
+       * 30–59  = neutral/manual review
+       * 60–100 = failure
+       */
+      const checkConclusion =
+        result.riskScore >= 60
+          ? "failure"
+          : result.riskScore >= 30
+            ? "neutral"
+            : "success";
+
+      const checkTitle =
+        checkConclusion === "failure"
+          ? "High-risk changes detected"
+          : checkConclusion === "neutral"
+            ? "Manual review recommended"
+            : "No significant risks detected";
+
+      const findingSummary =
+        result.findings.length > 0
+          ? result.findings
+              .map(
+                (finding) =>
+                  `- ${finding.severity.toUpperCase()}: ` +
+                  `${finding.file} — ${finding.message}`,
+              )
+              .join("\n")
+          : "No deterministic risks were detected.";
+
+      try {
+        const checkRun =
+          await context.octokit.rest.checks.create({
+            owner,
+            repo,
+            name: "ReviewPilot AI",
+            head_sha: pullRequest.head.sha,
+            status: "completed",
+            conclusion: checkConclusion,
+            output: {
+              title: checkTitle,
+              summary: [
+                `Risk score: ${result.riskScore}/100`,
+                "",
+                `Files changed: ${result.filesChanged}`,
+                `Additions: ${result.additions}`,
+                `Deletions: ${result.deletions}`,
+                "",
+                "Findings:",
+                findingSummary,
+              ].join("\n"),
+            },
+          });
+
+        context.log.info(
+          {
+            checkRunId: checkRun.data.id,
+            conclusion: checkConclusion,
+          },
+          "ReviewPilot check run created",
+        );
+      } catch (error) {
+        context.log.error(
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : String(error),
+          },
+          "Unable to create ReviewPilot check run",
+        );
+      }
+
       context.log.info(
         {
           repository: context.payload.repository.full_name,
           pullRequest: pullRequest.number,
           riskScore: result.riskScore,
           aiReviewGenerated: aiReview !== null,
+          checkConclusion,
         },
         "Pull request analyzed",
       );
