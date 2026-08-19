@@ -8,6 +8,13 @@ interface AiReviewInput {
   files: ChangedFile[];
 }
 
+const DEFAULT_MODELS = [
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite",
+];
+
+const MAX_ATTEMPTS_PER_MODEL = 2;
+
 function redactCredentials(text: string): string {
   return text.replace(
     /(api[_-]?key|password|secret|token)(\s*[:=]\s*)["'][^"']+["']/gi,
@@ -34,19 +41,44 @@ function prepareDiff(files: ChangedFile[]): string {
     .slice(0, 30_000);
 }
 
-export async function generateAiReview(
-  input: AiReviewInput,
-): Promise<string | null> {
-  const apiKey = process.env.GEMINI_API_KEY;
+function getErrorStatus(error: unknown): number | undefined {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error
+  ) {
+    const status = (error as { status?: unknown }).status;
 
-  if (!apiKey) {
-    return null;
+    if (typeof status === "number") {
+      return status;
+    }
   }
 
-  const client = new GoogleGenAI({ apiKey });
+  return undefined;
+}
+
+function isRetryableError(error: unknown): boolean {
+  const status = getErrorStatus(error);
+
+  return (
+    status === 429 ||
+    status === 500 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504
+  );
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
+
+function createPrompt(input: AiReviewInput): string {
   const diff = prepareDiff(input.files);
 
-  const prompt = `
+  return `
 You are ReviewPilot, a careful senior software engineer reviewing a
 GitHub pull request.
 
@@ -79,11 +111,71 @@ ${input.description || "No description provided."}
 CHANGED CODE:
 ${diff}
 `.trim();
+}
 
-  const response = await client.models.generateContent({
-    model: "gemini-3.5-flash-lite",
-    contents: prompt,
-  });
+export async function generateAiReview(
+  input: AiReviewInput,
+): Promise<string | null> {
+  const apiKey = process.env.GEMINI_API_KEY;
 
-  return response.text?.trim() || null;
+  if (!apiKey) {
+    return null;
+  }
+
+  const client = new GoogleGenAI({ apiKey });
+  const prompt = createPrompt(input);
+
+  const configuredModel = process.env.GEMINI_MODEL;
+
+  const models = configuredModel
+    ? [
+        configuredModel,
+        ...DEFAULT_MODELS.filter(
+          (model) => model !== configuredModel,
+        ),
+      ]
+    : DEFAULT_MODELS;
+
+  let lastError: unknown;
+
+  for (const model of models) {
+    for (
+      let attempt = 1;
+      attempt <= MAX_ATTEMPTS_PER_MODEL;
+      attempt += 1
+    ) {
+      try {
+        const response = await client.models.generateContent({
+          model,
+          contents: prompt,
+        });
+
+        const review = response.text?.trim();
+
+        if (review) {
+          return review;
+        }
+
+        throw new Error(
+          `Gemini model ${model} returned an empty response.`,
+        );
+      } catch (error) {
+        lastError = error;
+
+        if (!isRetryableError(error)) {
+          throw error;
+        }
+
+        if (attempt < MAX_ATTEMPTS_PER_MODEL) {
+          const delay = 1_000 * attempt;
+          await wait(delay);
+        }
+      }
+    }
+  }
+
+  throw (
+    lastError ??
+    new Error("All configured Gemini models failed.")
+  );
 }
