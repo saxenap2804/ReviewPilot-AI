@@ -1,0 +1,16 @@
+node_modules/
+lib/
+tests/
+coverage/
+
+.git/
+.github/
+
+.env
+.env.*
+!.env.example
+*.pem
+
+*.log
+.DS_Store
+.vscode/
