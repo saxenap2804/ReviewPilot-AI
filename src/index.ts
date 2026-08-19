@@ -1,4 +1,5 @@
 import type { Probot } from "probot";
+import "dotenv/config";
 
 import { generateAiReview } from "./ai-reviewer.js";
 import {
