@@ -1,5 +1,6 @@
-import type { Probot } from "probot";
 import "dotenv/config";
+
+import type { Probot } from "probot";
 
 import { generateAiReview } from "./ai-reviewer.js";
 import {
@@ -7,6 +8,8 @@ import {
   type ChangedFile,
   type Finding,
 } from "./analyzer.js";
+
+const REVIEW_COMMENT_MARKER = "<!-- reviewpilot-ai-review -->";
 
 function formatFinding(finding: Finding): string {
   const icon = {
@@ -64,7 +67,12 @@ export default function reviewPilot(app: Probot): void {
         });
       } catch (error) {
         context.log.warn(
-          { error },
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : String(error),
+          },
           "Gemini review failed; continuing with rule-based analysis.",
         );
       }
@@ -79,6 +87,7 @@ export default function reviewPilot(app: Probot): void {
         "AI analysis was unavailable; rule-based analysis completed successfully.";
 
       const body = [
+        REVIEW_COMMENT_MARKER,
         "## 🤖 ReviewPilot Automated Review",
         "",
         `**Risk score:** ${result.riskScore}/100`,
@@ -101,9 +110,49 @@ export default function reviewPilot(app: Probot): void {
         "_ReviewPilot performs automated analysis. Human review is still recommended._",
       ].join("\n");
 
-      await context.octokit.rest.issues.createComment(
-        context.issue({ body }),
+      const existingComments =
+        await context.octokit.paginate(
+          context.octokit.rest.issues.listComments,
+          {
+            owner,
+            repo,
+            issue_number: pullRequest.number,
+            per_page: 100,
+          },
+        );
+
+      const existingReview = existingComments.find(
+        (comment) =>
+          comment.user?.type === "Bot" &&
+          comment.body?.includes(REVIEW_COMMENT_MARKER),
       );
+
+      if (existingReview) {
+        await context.octokit.rest.issues.updateComment({
+          owner,
+          repo,
+          comment_id: existingReview.id,
+          body,
+        });
+
+        context.log.info(
+          { commentId: existingReview.id },
+          "Existing ReviewPilot comment updated",
+        );
+      } else {
+        const createdComment =
+          await context.octokit.rest.issues.createComment({
+            owner,
+            repo,
+            issue_number: pullRequest.number,
+            body,
+          });
+
+        context.log.info(
+          { commentId: createdComment.data.id },
+          "New ReviewPilot comment created",
+        );
+      }
 
       context.log.info(
         {
