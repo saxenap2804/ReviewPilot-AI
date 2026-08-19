@@ -4,7 +4,7 @@
   "description": "An AI-powered GitHub App that reviews pull requests, detects risks, suggests code improvements, and recommends tests.",
   "main": "lib/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "tsx --test tests/analyzer.test.ts",
     "build": "tsc",
     "start": "probot run ./lib/index.js",
     "dev": "npm run build && npm start"
